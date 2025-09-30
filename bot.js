@@ -8,7 +8,7 @@ let inBotMessages = "Message sent by the bot.";
 
 let results = [];
 
-function parseMessage(msg, sender) {
+function parseMessage(msg, sender, messageTimestamp) {
   const gameRegex = /(Zip|Mini Sudoku|Tango|Queens)/;
   const numberRegex = /#?(\d+)/;
   const timeRegex = /(\d+:\d+)/;
@@ -18,7 +18,7 @@ function parseMessage(msg, sender) {
   const time = msg.match(timeRegex)?.[1];
 
   if (game && number && time) {
-    return { sender, game, number: parseInt(number), time };
+    return { sender, messageTimestamp, game, number: parseInt(number), time };
   }
   return null;
 }
@@ -53,7 +53,7 @@ async function getMessages(chatId) {
       const contact = await message.getContact();
       sender = contact.pushname || contact.number;
     }
-    const parsed = parseMessage(message.body, sender);
+    const parsed = parseMessage(message.body, sender, message.timestamp);
 
     if (parsed) {
       const id = gamesIds[parsed.game];
@@ -71,6 +71,7 @@ async function getMessages(chatId) {
         game: parsed.game,
         number: parsed.number,
         time: parsed.time,
+        messageTimestamp: parsed.messageTimestamp,
       });
     }
   }
@@ -88,9 +89,14 @@ function generateDailySummary() {
   GAMES.forEach((game) => {
     const gameResults = results.filter((r) => r.game === game);
     if (gameResults.length > 0) {
-      const winner = gameResults.reduce((a, b) =>
-        timeToSeconds(a.time) < timeToSeconds(b.time) ? a : b
-      );
+      const winner = gameResults.reduce((a, b) => {
+        const timeA = timeToSeconds(a.time);
+        const timeB = timeToSeconds(b.time);
+        if (timeA === timeB) {
+          return a.messageTimestamp < b.messageTimestamp ? a : b;
+        }
+        return timeA < timeB ? a : b;
+      });
       winners[game] = winner;
       winCount[winner.sender] = (winCount[winner.sender] || 0) + 1;
     }
@@ -134,7 +140,6 @@ client.on("ready", () => {
 client.on("message_create", async (message) => {
   if (message.body.toLowerCase().includes(triggerString)) {
     results = [];
-    // console.log(`Trigger message received from ${message.from}`);
     const groupId = message.from.endsWith(".us") ? message.from : message.to;
     await getMessages(groupId);
     message.reply(generateDailySummary());
@@ -143,5 +148,5 @@ client.on("message_create", async (message) => {
   }
 });
 
-// console.log("Starting client...");
+console.log("Starting client...");
 client.initialize();
